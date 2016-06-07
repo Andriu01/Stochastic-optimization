@@ -8,11 +8,13 @@ from Course import Course
 rooms = []
 Days_in_the_week = 5
 Number_of_activities = 6
-Max_classes = 10
+Max_classes = 5
 students = []
 teachers = []
 classes_names = ["A", "B","C", "D","E","F","G","H"]
 classes = []
+
+# 100 students 1 lecture
 
 for i in classes_names:
     classes.append((Course(i)))
@@ -42,12 +44,16 @@ for i in xrange(Days_in_the_week):
     Week.append(day)
 
 
-def random_activity():
+def random_activity(type):
+
+    match = False
     day = random.randint(0, Days_in_the_week-1)
     termin = random.randint(0, Number_of_activities-1)
     room =random.randint(0, len(rooms)-1)
     activity = Week[day][termin][room]
-    return activity
+    if activity.room.type == type:
+        match = True
+    return (match,activity)
 
 def print_activity(activity):
     print "&&&&&&&&&&&&&&&&&&&&&&&&&&&"
@@ -61,26 +67,37 @@ def generate_random_solution():
     #first add teacher to lectures
     for teacher in teachers:
         for counter in xrange(Max_classes):
+            type = "LAB"
             while(True):
-                activity = random_activity()
-                if activity.teacher is None:
+                match, activity = random_activity(type)
+                if match and activity.teacher is None:
                     activity.teacher = teacher
                     teacher.schedule.append(activity)
                     #activity.course = teacher.course
                     teacher.course.activities.append(activity)
                     break
-
+        #add foreach teacher 1 lecture with all students
+        type = "LECTURE"
+        while(True):
+            match, activity = random_activity(type)
+            if match and activity.teacher is None:
+                for ident in xrange(len(students)):
+                    activity.students.append(students[ident])
+                activity.teacher = teacher
+                #teacher.schedule.append(activity)
+                #activity.course = teacher.course
+                #teacher.course.activities.append(activity)
+                break
+            #print "Next TRY"
     #next add students each student mus have classes with each teacher
     for teacher in teachers:
         #print(teacher.course.activity)
         for ident in xrange(len(students)):
-            added_activity= teacher.schedule[ident/10]
+            added_activity= teacher.schedule[ident/20]
             #for j in xrange(20):
             added_activity.students.append(students[ident])
             teacher.students.append(students[ident])
             teacher.course.students.append(students[ident])
-
-
 
 def print_solution():
     for Day in Week:
@@ -91,14 +108,14 @@ def print_solution():
             for activity in Schedule:
                 print_activity(activity)
 
-#print_solution()
-#todo check if all lectures has different
-#return true if noe unique
-
-
-def lecture_conflicts(Schedule):
+def teacher_conflicts(Schedule):
     seen = set()
-    return any(i.teacher in seen or seen.add(i.teacher) for i in Schedule)
+    for activity in Schedule:
+        if activity.teacher in seen:
+            return True
+        elif activity.teacher:
+            seen.add(activity.teacher)
+    return False
 
 #true if any student has conflict in this time
 def students_conflicts(Schedule):
@@ -114,6 +131,20 @@ def students_conflicts(Schedule):
         sum+= count
     return sum
 
+def lecture_conflicts(Schedule):
+
+    counter = 0
+    lecture = False
+    for activity in Schedule:
+        if activity.room.type=="LAB" and activity.teacher:
+            counter +=1
+        if activity.room.type=="LECTURE" and activity.teacher:
+            lecture = True
+    if lecture:
+        return counter != 0
+    else:
+        return False
+
 #to improve
 def calculate_cost():
     cost = 0
@@ -121,7 +152,10 @@ def calculate_cost():
         for Schedule in Day:
             conflict = lecture_conflicts(Schedule)
             if conflict:
-                cost +=250
+                cost += 250
+            conflict = teacher_conflicts(Schedule)
+            if conflict:
+                cost += 100
             #students_with_conflict = students_conflicts(Schedule)
             #if students_with_conflict:
             #    cost += 5*students_with_conflict
@@ -145,9 +179,10 @@ def new_assignment(activity):
     if activity.students:
         student_id = random.randint(0, (len(activity.students)-1))
         name = activity.students.pop(student_id)
-        new_activity = random_activity()
-        new_activity.students.append(name)
-        swapped = True
+        match, new_activity = random_activity("LAB")
+        if match:
+            new_activity.students.append(name)
+            swapped = True
     return swapped
 
 def swap_students(activity_a, student_a_ind,activity_b, student_b_ind):
@@ -177,6 +212,19 @@ def swap_teacher(activity_a,activity_b):
         return True
     return False
 
+def new_teacher_assignment(teacher, old_activity, new_activity):
+
+
+    new_activity.students = old_activity.students
+    new_activity.teacher = teacher
+    old_activity.students = []
+    old_activity.teacher = None
+    teacher.schedule.remove(old_activity)
+    teacher.schedule.append(new_activity)
+    teacher.course.activities.remove(old_activity)
+    teacher.course.activities.append(new_activity)
+
+
 def cooling_temp(temp):
     return temp * 0.99
 
@@ -190,36 +238,45 @@ def annealing(temp):
     f = open("tmp","wb")
     licznik = 0
     generate_random_solution()
+    print "First Solution"
+    #print_solution()
     solution_cost = calculate_cost()
     print "Start with %d" % solution_cost
     while (temp > 0.01):
-        activity_a = random_activity()
-        activity_b = random_activity()
-        swapped= swap_teacher(activity_a, activity_b)
-        #swapped = True
 
-        current_cost = calculate_cost()
-        if(current_cost > solution_cost):
-            swapped = False
-            swap_teacher(activity_b,activity_a)
-        elif random.random()> probability(solution_cost,current_cost,temp):
-            swapped = False
-            swap_teacher(activity_b,activity_a)
+        while(True):
+            match_a, activity_a = random_activity("LAB")
+            match_b, activity_b = random_activity("LAB")
+            if (match_a and match_b):
+                break
+        swapped= swap_teacher(activity_a, activity_b)
 
         class_to_swap = classes[random.randint(0, len(classes)-1)]
         changes = change_student_assignment(class_to_swap)
+
+        teacher = teachers[random.randint(0, len(teachers)-1)]
+        while(True):
+            match, new_activity = random_activity("LAB")
+            if match and new_activity.teacher is None:
+                break
+        old_activity = teacher.schedule[random.randint(0, Max_classes-1)]
+        new_teacher_assignment(teacher, old_activity, new_activity)
         current_cost = calculate_cost()
         swapped = True
         if(current_cost > solution_cost):
             swapped = False
+            new_teacher_assignment(teacher, new_activity, old_activity)
+            swap_teacher(activity_b,activity_a)
             swap_students(changes[0], changes[3],changes[2], changes[1])
         elif random.random()> probability(solution_cost,current_cost,temp):
             swapped = False
+            new_teacher_assignment(teacher, new_activity, old_activity)
+            swap_teacher(activity_b,activity_a)
             swap_students(changes[0], changes[3],changes[2], changes[1])
         if swapped:
             solution_cost=current_cost
             licznik = licznik + 1
-            f.write(str(licznik) + " " + str(current_cost) + "\n")
+        f.write(str(licznik) + " " + str(current_cost) + "\n")
         temp = cooling_temp(temp)
     print "Solution %d" % solution_cost
 
